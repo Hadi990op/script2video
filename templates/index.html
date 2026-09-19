@@ -45,6 +45,35 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .video-card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 1rem; }
 .video-card h3 { margin-bottom: 0.5rem; }
 video { width: 100%; border-radius: 8px; }
+
+#preview {
+    margin-top: 1.5rem;
+    background: rgba(0,0,0,0.25); border-radius: 12px;
+    padding: 1rem; display: none;
+}
+#preview h3 { font-size: 1rem; color: #00b8d4; margin-bottom: 0.75rem; }
+.preview-row {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem;
+}
+.preview-row video {
+    width: 100%; height: 90px; object-fit: cover;
+    border-radius: 8px; background: #000;
+}
+
+#jobs { margin-top: 1.5rem; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 1rem; display: none; }
+#jobs h3 { font-size: 1rem; margin-bottom: 0.5rem; color: #aaa; }
+.job-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.6rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1);
+    cursor: pointer; font-size: 0.9rem;
+}
+.job-row:hover { background: rgba(255,255,255,0.07); }
+.badge { padding: 0.2rem 0.7rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600; }
+.badge.running { background: #ff9800; color: #000; }
+.badge.done { background: #4caf50; color: #000; }
+.badge.error { background: #f44336; color: #fff; }
+.badge:empty { display: none; }
 </style>
 </head>
 <body>
@@ -62,66 +91,185 @@ video { width: 100%; border-radius: 8px; }
     <button id="go" onclick="generate()">🚀 Generate Video</button>
 
     <div id="log"></div>
+    <div id="preview">
+        <h3>📺 Live Preview — clips as they download</h3>
+        <div class="preview-row" id="previewRow"></div>
+    </div>
     <div id="results"></div>
+
+    <div id="jobs">
+        <h3>Recent Jobs (background me chal rahe / purane)</h3>
+        <div id="jobsList"></div>
+    </div>
 </div>
 <script>
     const BASE = window.location.pathname.replace(/\/$/, "");
-let pollTimer = null;
-function generate() {
-    const script = document.getElementById('script').value.trim();
-    if (!script) { alert('Script likhein pehle!'); return; }
-    const voice = document.getElementById('voice').value;
-    document.getElementById('go').disabled = true;
-    document.getElementById('log').textContent = 'Submitting...';
-    document.getElementById('results').innerHTML = '';
+    let pollTimer = null, previewTimer = null, currentJob = null;
 
-    fetch(BASE+'/api/generate', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({script, voice})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.error) throw new Error(data.error);
-        pollTimer = setInterval(() => poll(data.job_id), 2000);
-    })
-    .catch(e => {
-        document.getElementById('log').textContent = 'Error: ' + e.message;
-        document.getElementById('go').disabled = false;
-    });
-}
-function poll(jobId) {
-    fetch(BASE+'/api/status/' + jobId)
-    .then(r => r.json())
-    .then(job => {
-        document.getElementById('log').textContent = job.log.join('\n');
-        if (job.status === 'done') {
-            clearInterval(pollTimer);
+    // ---------- localStorage helpers ----------
+    function saveJobLocally(jobId) {
+        const jobs = JSON.parse(localStorage.getItem('s2v_jobs') || '[]');
+        if (!jobs.includes(jobId)) jobs.unshift(jobId);
+        localStorage.setItem('s2v_jobs', JSON.stringify(jobs.slice(0, 20)));
+    }
+    function getLocalJobs() {
+        return JSON.parse(localStorage.getItem('s2v_jobs') || '[]');
+    }
+
+    // ---------- Generate ----------
+    function generate() {
+        const script = document.getElementById('script').value.trim();
+        if (!script) { alert('Script likhein pehle!'); return; }
+        const voice = document.getElementById('voice').value;
+        document.getElementById('go').disabled = true;
+        document.getElementById('log').textContent = 'Submitting...';
+        document.getElementById('results').innerHTML = '';
+        hidePreview();
+
+        fetch(BASE+'/api/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({script, voice})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            watchJob(data.job_id);
+        })
+        .catch(e => {
+            document.getElementById('log').textContent = 'Error: ' + e.message;
             document.getElementById('go').disabled = false;
-            const results = document.getElementById('results');
-            for (const [label, path] of Object.entries(job.result)) {
-                if (label === 'editor') {
-                    results.innerHTML += `
-                        <div class="video-card">
-                            <h3>🛠️ Open in Editor</h3>
-                            <a href="${path}">Edit timeline →</a>
-                        </div>`;
-                    continue;
-                }
+        });
+    }
+
+    // ---------- Live status + preview ----------
+    function watchJob(jobId) {
+        saveJobLocally(jobId);
+        currentJob = jobId;
+        clearInterval(pollTimer);
+        clearInterval(previewTimer);
+
+        pollTimer = setInterval(() => poll(jobId), 3000);
+        previewTimer = setInterval(() => pollPreview(jobId), 4000);
+        poll(jobId);
+        pollPreview(jobId);
+    }
+
+    function poll(jobId) {
+        fetch(BASE+'/api/status/' + jobId)
+        .then(r => r.json())
+        .then(job => {
+            if (job.error) return;
+            document.getElementById('log').textContent = job.log.join('\n');
+            if (job.status === 'done') {
+                clearInterval(pollTimer);
+                clearInterval(previewTimer);
+                document.getElementById('go').disabled = false;
+                showResults(job.result);
+            } else if (job.status === 'error') {
+                clearInterval(pollTimer);
+                clearInterval(previewTimer);
+                document.getElementById('go').disabled = false;
+                document.getElementById('log').textContent += '\n❌ ' + job.log.join('\n');
+            }
+        });
+    }
+
+    function pollPreview(jobId) {
+        if (!currentJob || jobId !== currentJob) return;
+        fetch(BASE+'/api/preview/' + jobId)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.clips || !data.clips.length) return;
+            const row = document.getElementById('previewRow');
+            const seen = new Set();
+            for (const el of row.children) seen.add(el.src);
+            document.getElementById('preview').style.display = 'block';
+            for (const url of data.clips) {
+                if (seen.has(url)) continue;
+                const v = document.createElement('video');
+                v.src = url; v.muted = true; v.loop = true; v.playsInline = true;
+                v.autoplay = true;
+                row.appendChild(v);
+            }
+        });
+    }
+
+    function hidePreview() {
+        document.getElementById('preview').style.display = 'none';
+        document.getElementById('previewRow').innerHTML = '';
+    }
+
+    function showResults(result) {
+        const results = document.getElementById('results');
+        results.innerHTML = '';
+        for (const [label, path] of Object.entries(result)) {
+            if (label === 'editor') {
                 results.innerHTML += `
                     <div class="video-card">
-                        <h3>${label === '16x9' ? 'YouTube (16:9)' : 'TikTok/Reels (9:16)'}</h3>
-                        <video controls src="${path}"></video>
-                        <a href="${path}" download>Download</a>
+                        <h3>🛠️ Open in Editor</h3>
+                        <a href="${path}">Edit timeline →</a>
                     </div>`;
+                continue;
             }
-        } else if (job.status === 'error') {
-            clearInterval(pollTimer);
-            document.getElementById('go').disabled = false;
-            document.getElementById('log').textContent += '\n❌ ' + job.log.join('\n');
+            results.innerHTML += `
+                <div class="video-card">
+                    <h3>${label === '16x9' ? 'YouTube (16:9)' : 'TikTok/Reels (9:16)'}</h3>
+                    <video controls src="${path}"></video>
+                    <a href="${path}" download>Download</a>
+                </div>`;
         }
+    }
+
+    // ---------- Recent jobs (survives page close/restart) ----------
+    function loadRecentJobs() {
+        const ids = getLocalJobs();
+        if (!ids.length) return;
+        fetch(BASE+'/api/jobs')
+        .then(r => r.json())
+        .then(data => {
+            const jobs = data.jobs.filter(j => ids.includes(j.job_id));
+            if (!jobs.length) return;
+            const el = document.getElementById('jobsList');
+            el.innerHTML = '';
+            for (const j of jobs) {
+                const row = document.createElement('div');
+                row.className = 'job-row';
+                row.innerHTML = `
+                    <span>🎞️ ${j.job_id}</span>
+                    <span>
+                        <span class="badge ${j.status}">${j.status}</span>
+                        ${j.result && j.result['16x9'] ? '▶️' : ''}
+                    </span>`;
+                row.onclick = () => {
+                    hidePreview();
+                    document.getElementById('results').innerHTML = '';
+                    if (j.status === 'done' && j.result) showResults(j.result);
+                    else watchJob(j.job_id);
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                };
+                el.appendChild(row);
+            }
+            document.getElementById('jobs').style.display = 'block';
+        });
+    }
+
+    // On page load: if a job from localStorage is still running, resume watching it
+    window.addEventListener('load', () => {
+        const ids = getLocalJobs();
+        if (!ids.length) return;
+        fetch(BASE+'/api/jobs')
+        .then(r => r.json())
+        .then(data => {
+            const running = data.jobs.find(j => ids.includes(j.job_id) && j.status === 'running');
+            if (running) {
+                document.getElementById('go').disabled = true;
+                document.getElementById('log').textContent = '⏳ Background job chal raha hai — wapas connect ho gaya!';
+                watchJob(running.job_id);
+            }
+        });
+        loadRecentJobs();
     });
-}
 </script>
 </body>
 </html>
