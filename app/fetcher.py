@@ -59,7 +59,7 @@ def find_working_proxies(max_proxies: int = 5) -> list:
 
 
 def download_via_proxy(url_or_search: str, out_dir: Path, proxies: list,
-                       duration_filter: str = "duration<600",
+                       duration_filter: str = "duration<1200",
                        extra: list = None) -> list:
     """Download via a list of proxies (fallback on failure). Return paths."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -68,7 +68,7 @@ def download_via_proxy(url_or_search: str, out_dir: Path, proxies: list,
         cmd = [
             "yt-dlp",
             "--proxy", f"http://{proxy}",
-            "--match-filter", duration_filter + " & title!~=watermark & title!~=envato & title!~=intro",
+            "--match-filter", duration_filter + " & title!~=stock & title!~=watermark & title!~=envato & title!~=4k",
             "--max-downloads", "1",
             "--print", "after_move:filepath",
             "--no-playlist",

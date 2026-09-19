@@ -1,8 +1,9 @@
 """Groq LLM integration: script -> semantic scene descriptions.
 
 Uses Groq's free API (gpt-oss-20b) to analyze the script and produce
-per-scene visual descriptions + search terms, replacing naive keyword
-extraction. Falls back to rule-based extraction if the API fails.
+per-scene visual descriptions + search terms for REAL YouTube footage
+(actual archival/broadcast clips), not generic stock footage.
+Falls back to rule-based extraction if the API fails.
 """
 import json
 import re
@@ -16,16 +17,20 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "openai/gpt-oss-20b"
 KEY_PATH = Path(__file__).parent.parent / "secrets" / "groq.key"
 
-SYSTEM_PROMPT = """You are a professional video editor. The user gives you a narration script for a short video. Break it into visual scenes and for each scene decide what stock footage should be shown.
+SYSTEM_PROMPT = """You are a professional documentary editor. The user gives you a narration script for a short video. Break it into visual scenes and decide what REAL FOOTAGE should be shown for each scene.
 
-Rules:
-- Ignore proper names, dates, numbers as visual material — focus on concrete visual subjects.
+CRITICAL RULES:
+- We will download real YouTube videos. These must be ACTUAL footage of the subject (e.g. real match footage, real interviews, real archival recordings), NOT generic stock clips.
+- Identify the MAIN SUBJECT of the script (a person, team, event, place). EVERY search_terms MUST contain the subject's name.
+- Think like a documentary researcher: what would you type into YouTube to find real footage? E.g. for Pelé's childhood -> "Pelé early career Santos", for his World Cup goals -> "Pelé 1970 World Cup goals".
+- If the subject lived before color video, remember their footage is archival / black and white.
+- If a scene has no filmable real footage of the subject, search for real news or documentary clips about the subject instead of generic stock.
 - Each scene should cover 3-7 seconds of narration.
-- search_terms must be concrete, imageable subjects (e.g. "crowded street market", "ocean waves sunset", "city skyline night").
-- mood is one of: calm, energetic, tense, sad, happy, neutral.
 
 Return ONLY a JSON array, no markdown, no explanation:
-[{"search_terms": "...", "mood": "calm", "text": "the scene narration text"}]"""
+[{"search_terms": "...", "mood": "calm", "text": "the scene narration text"}]
+
+mood is one of: calm, energetic, tense, sad, happy, neutral."""
 
 
 def _api_key() -> str:
@@ -33,16 +38,14 @@ def _api_key() -> str:
 
 
 def analyze_script(script: str, max_scenes: int = 12) -> list:
-    """Analyze script via Groq. Returns list of scenes:
-    [{"text", "search_terms", "mood"}]
-
+    """Analyze script via Groq. Returns list of scenes.
     Falls back to rule-based extract.extract_keywords() on any failure.
     """
     try:
         scenes = _call_groq(script, max_scenes)
         if scenes:
             return scenes
-    except Exception as e:
+    except Exception:
         pass  # fall through to fallback
 
     # Fallback: rule-based
@@ -79,7 +82,6 @@ def _call_groq(script: str, max_scenes: int) -> list:
 
 def _parse_json_array(raw: str) -> list:
     """Parse LLM output, tolerating markdown fences and stray text."""
-    # strip markdown fences
     m = re.search(r"\[.*\]", raw, re.DOTALL)
     if not m:
         return []

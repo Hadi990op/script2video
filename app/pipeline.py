@@ -37,10 +37,10 @@ async def run_pipeline(script: str, voice_key: str, job_dir: Path,
     for i, s in enumerate(scenes):
         log(f"Scene {i+1}: '{s['search_terms']}' ({s['mood']})")
 
-    # 2. Download clips for each scene via proxy
+    # 2. Download real-footage clips for each scene via proxy
     clips = []
     for i, scene in enumerate(scenes):
-        query = scene["search_terms"] + " stock footage"
+        query = scene["search_terms"]
         log(f"Scene {i+1}: searching '{query}'...")
         try:
             files = fetcher.download_via_proxy(
