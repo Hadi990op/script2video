@@ -1,0 +1,7 @@
+outputs/
+temp/
+jobs/
+__pycache__/
+*.pyc
+proxies*.txt
+.flaskenv
