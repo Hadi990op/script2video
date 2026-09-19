@@ -8,11 +8,12 @@
     "portsAttributes": {
         "8000": {
             "label": "Script2Video Web UI",
+            "public": true,
             "onAutoForward": "openPreview"
         }
     },
     "postCreateCommand": "bash .devcontainer/setup.sh",
-    "postStartCommand": "cd /workspaces/script2video && (nohup python3 server.py > server.log 2>&1 &) && sleep 8 && tail -5 server.log",
+    "postStartCommand": "bash .devcontainer/start.sh",
     "customizations": {
         "vscode": {
             "extensions": ["ms-python.python"]
