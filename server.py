@@ -7,11 +7,11 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app.pipeline import run_pipeline
 from app import voice
 
-BASE = Path(__file__).resolve().parent.parent
+BASE = Path(__file__).resolve().parent
 OUTPUTS = BASE / "outputs"
 JOBS = BASE / "jobs"
 OUTPUTS.mkdir(exist_ok=True)
