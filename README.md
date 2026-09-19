@@ -77,3 +77,23 @@ templates/         # Web UI + editor UI
 
 - YouTube downloads route through public HTTP proxies because datacenter IPs are bot-blocked. If no proxies are reachable, jobs fail with a clear error.
 - One Groq API key is needed (free tier works) — place it in `secrets/groq.key`.
+
+## Run on GitHub Codespaces (free)
+
+No server needed — this repo is ready to run on GitHub Codespaces (free tier: 60 hrs/month on a 2-core machine).
+
+1. On GitHub, open this repo → green **Code** button → **Codespaces** tab → **Create codespace on main**.
+2. The container builds automatically (ffmpeg, yt-dlp, Flask, edge-tts).
+3. Add your Groq API key — either:
+   - paste it into `secrets/groq.key`, or
+   - repo **Settings → Secrets and variables → Codespaces** → new secret named `GROQ_API_KEY` (picked up automatically).
+4. Run:
+   ```bash
+   python3 server.py
+   ```
+5. Codespaces shows a "forwarded ports" notification for port **8000** — click it (or open the *Ports* panel) to open the web UI in your browser.
+
+Tips:
+
+- Stop the Codespace when done (Codespaces panel → Stop) so you don't burn free hours.
+- Outputs are saved in `outputs/<job_id>/` and are downloadable from the web UI.
