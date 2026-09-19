@@ -23,6 +23,13 @@ else
 fi
 
 echo "=== Installing Python deps ==="
+if ! python3 -m pip --version > /dev/null 2>&1; then
+    if [ "$PKG" = "alpine" ]; then
+        sudo apk add --no-cache py3-pip
+    else
+        sudo apt-get install -y --no-install-recommends python3-pip
+    fi
+fi
 if [ "$PKG" = "alpine" ]; then
     python3 -m pip install --break-system-packages flask edge-tts yt-dlp
 else
