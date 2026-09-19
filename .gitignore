@@ -7,3 +7,4 @@ proxies*.txt
 .flaskenv
 gsk*.key
 secrets/
+secrets/
