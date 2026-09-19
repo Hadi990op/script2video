@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Script2Video Editor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    min-height: 100vh; color: #fff;
+    display: flex; flex-direction: column;
+}
+header {
+    padding: 1rem 2rem; background: rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: space-between;
+}
+header h1 { font-size: 1.3rem; }
+header .job-id { color: #888; font-size: 0.8rem; }
+.loading { padding: 3rem; text-align: center; color: #aaa; }
+.main { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+/* Preview player */
+.preview-wrap { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 1rem; }
+.preview-wrap video { width: 100%; max-height: 400px; border-radius: 8px; background: #000; }
+.preview-tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+.preview-tabs button {
+    padding: 0.5rem 1.2rem; border: none; border-radius: 8px; cursor: pointer;
+    background: rgba(255,255,255,0.1); color: #fff; font-size: 0.85rem;
+}
+.preview-tabs button.active { background: linear-gradient(90deg, #7c5cff, #00b8d4); }
+
+/* Timeline */
+.timeline-section { background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem; }
+.timeline-section h2 { font-size: 1rem; margin-bottom: 0.8rem; color: #b8b8d8; }
+
+.track-label { font-size: 0.75rem; color: #888; margin: 0.8rem 0 0.3rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.tracks { position: relative; }
+.track {
+    display: flex; gap: 2px; height: 64px; border-radius: 8px; overflow: hidden;
+    background: rgba(255,255,255,0.05);
+}
+.track.audio { height: 48px; }
+
+.clip {
+    flex: 0 0 auto; position: relative; overflow: hidden; cursor: pointer;
+    border-right: 2px solid #24243e; transition: filter 0.15s;
+}
+.track.video .clip { background: linear-gradient(135deg, #7c5cff, #00b8d4); }
+.clip:hover { filter: brightness(1.3); z-index: 2; }
+.clip.active { outline: 2px solid #fff; outline-offset: -2px; }
+.clip .label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 4px 6px; font-size: 0.65rem;
+    background: rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Word track */
+.words-track {
+    display: flex; gap: 1px; align-items: center; height: 32px;
+    font-size: 0.7rem; overflow: hidden;
+}
+.word {
+    flex: 0 0 auto; padding: 4px 6px; background: rgba(124,92,255,0.3);
+    border-radius: 4px; cursor: pointer; white-space: nowrap;
+}
+
+/* Detail panel */
+.detail-panel {
+    background: rgba(0,0,0,0.25); border-radius: 12px; padding: 1rem;
+    font-size: 0.9rem; line-height: 1.5;
+}
+.detail-panel h3 { font-size: 0.85rem; color: #00b8d4; margin-bottom: 0.5rem; }
+.mood-tag {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    font-size: 0.75rem; background: rgba(124,92,255,0.4);
+}
+.error { padding: 3rem; text-align: center; color: #ff6b6b; }
+</style>
+</head>
+<body>
+<header>
+    <h1>🎬 Script2Video Editor</h1>
+    <span class="job-id" id="jobId">{{ job_id }}</span>
+</header>
+<div id="content" class="loading">Loading timeline...</div>
+<div class="main" id="main" style="display:none">
+    <div class="preview-wrap">
+        <div class="preview-tabs">
+            <button id="tab-16x9" class="active" onclick="setAspect('16x9')">YouTube (16:9)</button>
+            <button id="tab-9x16" onclick="setAspect('9x16')">TikTok/Reels (9:16)</button>
+        </div>
+        <video id="player" controls></video>
+    </div>
+
+    <div class="timeline-section">
+        <h2>Timeline</h2>
+        <div class="track-label">Video Clips</div>
+        <div class="track video" id="videoTrack"></div>
+        <div class="track-label">Words</div>
+        <div class="words-track" id="wordTrack"></div>
+    </div>
+
+    <div class="detail-panel" id="detailPanel">
+        Click a clip or word to see details.
+    </div>
+</div>
+<div id="err" class="error" style="display:none">Timeline not found.</div>
+
+<script>
+const jobId = "{{ job_id }}";
+const base = `/outputs/${jobId}`;
+let timeline = null;
+
+async function load() {
+    try {
+        const res = await fetch(`/api/timeline/${jobId}`);
+        if (!res.ok) throw new Error("not found");
+        timeline = await res.json();
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("content").style.display = "none";
+        document.getElementById("main").style.display = "flex";
+        renderTimeline();
+        setAspect("16x9");
+    } catch (e) {
+        document.getElementById("content").style.display = "none";
+        document.getElementById("err").style.display = "block";
+    }
+}
+
+function setAspect(a) {
+    document.getElementById("tab-16x9").classList.toggle("active", a === "16x9");
+    document.getElementById("tab-9x16").classList.toggle("active", a === "9x16");
+    const player = document.getElementById("player");
+    const t = player.currentTime;
+    const wasPlaying = !player.paused;
+    player.src = `${base}/final_${a}.mp4`;
+    player.load();
+    player.currentTime = t;
+    if (wasPlaying) player.play();
+}
+
+function fmt(s) {
+    return `${s.toFixed(1)}s`;
+}
+
+function renderTimeline() {
+    const total = timeline.duration;
+    const track = document.getElementById("videoTrack");
+    track.innerHTML = "";
+    timeline.clips.forEach(clip => {
+        const el = document.createElement("div");
+        el.className = "clip";
+        el.style.flex = `0 0 ${(clip.duration / total) * 100}%`;
+        el.innerHTML = `<div class="label">${clip.search_terms}</div>`;
+        el.onclick = () => showClipDetail(clip, el);
+        track.appendChild(el);
+    });
+
+    const wt = document.getElementById("wordTrack");
+    wt.innerHTML = "";
+    timeline.words.forEach((w, i) => {
+        const el = document.createElement("div");
+        el.className = "word";
+        el.textContent = w.word;
+        el.onclick = () => {
+            document.getElementById("player").currentTime = w.start;
+            document.getElementById("player").play();
+            document.getElementById("detailPanel").innerHTML =
+                `<h3>Word</h3>"${w.word}" — ${fmt(w.start)} to ${fmt(w.end)}`;
+        };
+        wt.appendChild(el);
+    });
+}
+
+function showClipDetail(clip, el) {
+    document.querySelectorAll(".clip").forEach(c => c.classList.remove("active"));
+    el.classList.add("active");
+    const start = timeline.clips
+        .slice(0, clip.id)
+        .reduce((acc, c) => acc + c.duration, 0);
+    document.getElementById("detailPanel").innerHTML = `
+        <h3>Clip ${clip.id + 1}</h3>
+        <strong>Search:</strong> ${clip.search_terms}<br>
+        <strong>Mood:</strong> <span class="mood-tag">${clip.mood}</span><br>
+        <strong>Scene text:</strong> ${clip.scene_text}<br>
+        <strong>Duration:</strong> ${fmt(clip.duration)} (starts at ${fmt(start)})`;
+    // Jump player to clip start
+    document.getElementById("player").currentTime = start;
+}
+
+load();
+</script>
+</body>
+</html>

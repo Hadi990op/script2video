@@ -100,6 +100,14 @@ function poll(jobId) {
             document.getElementById('go').disabled = false;
             const results = document.getElementById('results');
             for (const [label, path] of Object.entries(job.result)) {
+                if (label === 'editor') {
+                    results.innerHTML += `
+                        <div class="video-card">
+                            <h3>🛠️ Open in Editor</h3>
+                            <a href="${path}">Edit timeline →</a>
+                        </div>`;
+                    continue;
+                }
                 results.innerHTML += `
                     <div class="video-card">
                         <h3>${label === '16x9' ? 'YouTube (16:9)' : 'TikTok/Reels (9:16)'}</h3>

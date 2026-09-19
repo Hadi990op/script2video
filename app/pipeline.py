@@ -1,8 +1,9 @@
-"""End-to-end pipeline: script -> keywords -> clips -> voiceover -> final videos."""
+"""End-to-end pipeline: script -> LLM scenes -> clips -> voiceover -> videos + editor timeline."""
+import json
 import shutil
 from pathlib import Path
 
-from . import extract, fetcher, voice, editor
+from . import llm, fetcher, voice, editor
 
 VOICES = voice.VOICES
 
@@ -27,24 +28,24 @@ async def run_pipeline(script: str, voice_key: str, job_dir: Path,
             "No working proxy found for YouTube. Try again later.")
     log(f"Found {len(proxies)} working proxies")
 
-    # 1. Extract keywords per scene
-    log("Extracting keywords from script...")
-    scenes = extract.extract_keywords(script)
+    # 1. LLM scene analysis
+    log("Analyzing script with AI...")
+    scenes = llm.analyze_script(script)
     if not scenes:
         raise ValueError("Script is empty")
-    log(f"{len(scenes)} scenes detected")
+    log(f"{len(scenes)} scenes detected (AI)")
+    for i, s in enumerate(scenes):
+        log(f"Scene {i+1}: '{s['search_terms']}' ({s['mood']})")
 
     # 2. Download clips for each scene via proxy
     clips = []
     for i, scene in enumerate(scenes):
-        if not scene["keywords"]:
-            continue
-        query = " ".join(scene["keywords"]) + " stock footage"
+        query = scene["search_terms"] + " stock footage"
         log(f"Scene {i+1}: searching '{query}'...")
         try:
             files = fetcher.download_via_proxy(
                 f"ytsearch2:{query}", clips_dir, proxies)
-            clips.extend(files)
+            clips.append({"path": files[0], "scene": scene})
         except Exception as e:
             log(f"Scene {i+1} failed: {e}")
     if not clips:
@@ -59,27 +60,20 @@ async def run_pipeline(script: str, voice_key: str, job_dir: Path,
         script, VOICES[voice_key], vo_path, timings_path)
     log(f"Voiceover done ({len(words)} words)")
 
-    # 4. Cut clips: 6s each, enough to cover full voiceover
+    # 4. Cut clips to match voiceover duration
     log("Cutting clips...")
     cut_dir = temp / "cut"
     cut_dir.mkdir(exist_ok=True)
     vo_duration = editor.probe_duration(vo_path)
-    clip_len = 6.0
-    n_needed = int(vo_duration / clip_len) + (1 if vo_duration % clip_len else 0)
-    n_needed = max(1, n_needed)
-    log(f"Voiceover is {vo_duration:.1f}s, need {n_needed} clips of {clip_len:.0f}s")
+    n_needed = max(1, len(clips))
+    log(f"Voiceover is {vo_duration:.1f}s, {n_needed} clips")
     cut_clips = []
-    i = 0
-    while len(cut_clips) < n_needed:
-        c = clips[i % len(clips)]  # cycle through sources if needed
+    for i, item in enumerate(clips):
         out = cut_dir / f"clip_{i:03d}.mp4"
         try:
-            cut_clips.append(editor.cut_clip(Path(c), out, duration=clip_len))
+            cut_clips.append(editor.cut_clip(Path(item["path"]), out))
         except Exception as e:
-            log(f"Cut failed for {c}: {e}")
-        i += 1
-        if i >= n_needed * 3 and not cut_clips:
-            break
+            log(f"Cut failed: {e}")
     if not cut_clips:
         raise RuntimeError("No clips could be cut")
 
@@ -91,5 +85,29 @@ async def run_pipeline(script: str, voice_key: str, job_dir: Path,
         editor.render(vo_path, words, cut_clips, out_path, size)
         outputs[label] = out_path
 
-    shutil.rmtree(temp, ignore_errors=True)
+    # 6. Build editor timeline JSON (references kept temp files)
+    timeline = _build_timeline(job_dir, temp, words, cut_clips, clips, vo_duration)
+    (job_dir / "timeline.json").write_text(json.dumps(timeline, indent=2))
+
     return outputs
+
+
+def _build_timeline(job_dir, temp, words, cut_clips, clips, vo_duration):
+    """Build timeline JSON consumed by the editor UI."""
+    clip_entries = []
+    for i, (item, cut) in enumerate(zip(clips, cut_clips)):
+        scene = item["scene"]
+        clip_entries.append({
+            "id": i,
+            "file": f"temp/cut/{cut.name}",
+            "search_terms": scene["search_terms"],
+            "mood": scene["mood"],
+            "scene_text": scene["text"],
+            "duration": editor.probe_duration(cut),
+        })
+    return {
+        "duration": vo_duration,
+        "voiceover": "temp/voiceover.mp3",
+        "words": words,
+        "clips": clip_entries,
+    }

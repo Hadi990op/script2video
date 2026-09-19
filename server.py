@@ -1,4 +1,5 @@
 """Flask Web UI for script2video."""
+import json
 import uuid
 import shutil
 from pathlib import Path
@@ -52,6 +53,7 @@ def generate():
             outputs = run_pipeline_sync(script, voice_key, job_dir, on_progress)
             job["status"] = "done"
             job["result"] = {k: f"/outputs/{job_id}/{v.name}" for k, v in outputs.items()}
+            job["result"]["editor"] = f"/editor/{job_id}"
         except Exception as e:
             job["status"] = "error"
             job["log"].append(f"Error: {e}")
@@ -84,6 +86,24 @@ def status(job_id):
 @app.route("/outputs/<path:filename>")
 def outputs(filename):
     return send_from_directory(OUTPUTS, filename)
+
+
+# ---------- Editor ----------
+
+@app.route("/editor/<job_id>")
+def editor_page(job_id):
+    return render_template("editor.html", job_id=job_id)
+
+
+@app.route("/api/timeline/<job_id>")
+def timeline(job_id):
+    job_dir = OUTPUTS / job_id
+    tl_file = job_dir / "timeline.json"
+    if not tl_file.exists():
+        return jsonify({"error": "timeline not found"}), 404
+    timeline = json.loads(tl_file.read_text())
+    return jsonify(timeline)
+
 
 
 if __name__ == "__main__":
