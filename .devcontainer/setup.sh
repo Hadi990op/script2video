@@ -36,6 +36,12 @@ else
     python3 -m pip install flask edge-tts yt-dlp
 fi
 
+# Ensure yt-dlp/ffmpeg binaries are on PATH (pip user-bin dir often missing)
+if [ -f "$HOME/.local/bin/yt-dlp" ] && ! command -v yt-dlp > /dev/null 2>&1; then
+    sudo ln -sf "$HOME/.local/bin/yt-dlp" /usr/local/bin/yt-dlp
+fi
+export PATH="$HOME/.local/bin:$PATH"
+
 echo "=== Preparing secrets ==="
 mkdir -p secrets
 if [ ! -s secrets/groq.key ]; then
