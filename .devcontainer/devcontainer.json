@@ -12,6 +12,7 @@
         }
     },
     "postCreateCommand": "bash .devcontainer/setup.sh",
+    "postStartCommand": "cd /workspaces/script2video && (nohup python3 server.py > server.log 2>&1 &) && sleep 8 && tail -5 server.log",
     "customizations": {
         "vscode": {
             "extensions": ["ms-python.python"]
